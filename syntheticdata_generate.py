@@ -5,7 +5,7 @@ import glob
 import yaml
 # https://github.com/srp-31/Data-Augmentation-for-Object-Detection-YOLO-
 
-with open("C:\ModifiedTouchAutomate\Datagenerator\config.yaml" ,"r") as fp:
+with open("./config.yaml" ,"r") as fp:
     config_params = yaml.load(fp, Loader=yaml.FullLoader)
 
 backgroundFilePaths = config_params.get("BACKGROUND_FILE_PATHS")

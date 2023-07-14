@@ -1,8 +1,37 @@
+# Directories having main background images
 BACKGROUND_FILE_PATHS: ['','']
-SAMPLE_FILES_PATH: ''
-INCLUDE_FILE_NAMES: ['','']
-OUTPUT_PATH: ''
-OUTPUT_PER_SAMPLE: 60
-FRACTION_OF_INCLUDE_FILE: 0.50
-DIR_TO_PASS_TO_MODEL: ''
-BACKGROUND_FLIP_REQ: True
+# Not include path is given so that model trained on this dataset wont get
+# conused with the one present outside the scope of objects for detection
+STRICTLY_NOT_INCLUDE_PATH: ""
+# Include path contains icons that has to be detected by the model
+# Must be named as conseutive numbers starting from "0.png"
+STRICTLY_INCLUDE_PATH: ""
+# fraction of total (label and non-label) icons which are to be from "strictly include path"
+FRAC_INCLUDE: 0.90
+
+# Output, stored in images and labels directory
+OUTPUT_PATH: ""
+# no. of objects to include on background
+OUTPUT_PER_SAMPLE: 120
+# Output directory after splitting into training and testing
+DIR_TO_PASS_TO_MODEL: ""
+# fraction of total images to be collected for training and remain others for testing
+SPLIT_FRACTION: 0.90
+
+# If not wanted, make an empty array.
+BACKGROUND_FLIPS: [1, 0, -1]  # background flip horizontal, vertical, both at a time
+SCALE_RANGE: [1.0, 1.4]       # scales the icons between the range randomly
+ROTATE_ANGLES: [90, 270]      # rotation of background image.
+# if icon exceeds the width(px) or heightpx) passed here, scaling wont happen
+RESTRICT_SCALE: [60,60]
+
+# Rotate:180 is same as Flip:-1.
+# Rotate: 180 + Flip:0 is same as Flip:1
+# Rotate: 180 + Flip:1 is same as Flip:0
+# Rotate: 180 + Flip:-1 is same as Current.
+
+# Rotate:90 + Flip:-1 is same as Rotate:270.
+# Rotate:270 + Flip:-1 is same as Rotate:90
+# Rotate:270 + Flip:0 is same as Rotate:90 + Flip:1
+# Rotate:270 + Flip:1 is same as Rotate:90 + Flip:0
+# Rotate

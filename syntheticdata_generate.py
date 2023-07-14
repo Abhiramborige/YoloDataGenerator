@@ -8,33 +8,52 @@ import yaml
 with open("./config.yaml" ,"r") as fp:
     config_params = yaml.load(fp, Loader=yaml.FullLoader)
 
-backgroundFilePaths = config_params.get("BACKGROUND_FILE_PATHS")
-iconFilePath = config_params.get("SAMPLE_FILES_PATH")
+background_file_paths = config_params.get("BACKGROUND_FILE_PATHS")
+include_icon_path = config_params.get("STRICTLY_INCLUDE_PATH")
+not_include_icon_path = config_params.get("STRICTLY_NOT_INCLUDE_PATH")
+fraction_of_include = config_params.get("FRAC_INCLUDE")
+
 outputfolder = config_params.get("OUTPUT_PATH")
-flip_req = config_params.get("BACKGROUND_FLIP_REQ")
-# icons which require labelling
-include_files = config_params.get("INCLUDE_FILE_NAMES")
-fraction = config_params.get("FRACTION_OF_INCLUDE_FILE")
 icon_per_sample = config_params.get("OUTPUT_PER_SAMPLE")
-label_required_icon_count = fraction*icon_per_sample
-label_not_required_icon_count = icon_per_sample - label_required_icon_count
+flip_arr = config_params.get("BACKGROUND_FLIPS")
+scale_range = config_params.get("SCALE_RANGE")
+rotate_arr = config_params.get("ROTATE_ANGLES")
+restrict_range = config_params.get("RESTRICT_SCALE")
 
-if not (os.path.isdir(outputfolder+"images/")):
-    os.makedirs(outputfolder+"images/")
-if not (os.path.isdir(outputfolder+"labels/")):
-    os.makedirs(outputfolder+"labels/")
+os.makedirs(outputfolder+"images/", exist_ok=True)
+os.makedirs(outputfolder+"labels/", exist_ok=True)
+include_icons = []
+include_icon_names = []
+not_include_icons = []
+not_include_icon_names = []
 
-iconImgList =[]
-iconImgNameList = []
-for name in glob.glob(os.path.join(iconFilePath, "*.png")):
-    iconImgList.append(cv2.imread(name, cv2.IMREAD_UNCHANGED))
-    iconImgNameList.append(os.path.basename(name))
+# icons to be put on image which require labelling
+for name in os.listdir(include_icon_path):
+    include_icons.append(
+        cv2.imread(os.path.join(include_icon_path, name), cv2.IMREAD_UNCHANGED))
+    include_icon_names.append(name)
 # icons to be put on image which doesnt require labelling
-exclude_files = list(set(iconImgNameList) - set(include_files))
-print(iconImgNameList)
-print(include_files)
-print(exclude_files)
+for name in os.listdir(not_include_icon_path):
+    not_include_icons.append(
+        cv2.imread(os.path.join(not_include_icon_path, name), cv2.IMREAD_UNCHANGED))
+    not_include_icon_names.append(name)
+print(include_icon_names)
+print(not_include_icon_names)
 
+
+def rotate_image(image, angle):
+    img_center = tuple(np.array(image.shape[1::-1])/2)
+    rot_mat = cv2.getRotationMatrix2D(img_center, angle, 1.0)
+    result = cv2.warpAffine(
+        image, rot_mat, image.shape[1::-1], 
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(55,28,8)
+    )
+    return result
+
+def scaleImage(image, scale):
+    return cv2.resize(image, None, fx=scale, fy=scale)
 
 def place_distorted_sample(bkgImg, iconImg, occupancy_bits):
     bgHeight, bgWidth, _ = np.shape(bkgImg)
@@ -77,19 +96,25 @@ def place_distorted_sample(bkgImg, iconImg, occupancy_bits):
         raise AssertionError("Icon dimensions greater than image.")
 
 def choose_and_place_sample(bkgImg, occupancy_bits, 
-                         filenameWithExt, file_ptr, label_req = True):
+                         filenameWithExt, file_ptr, 
+                         label_req = True):
     # randomly choose the icon from include_files/exclude_files to put on image
     if label_req:
-        randnum = np.random.randint(0, len(include_files))
-        index_req = iconImgNameList.index(include_files[randnum])
+        randnum = np.random.randint(0, len(include_icons))
+        icon_img = include_icons[randnum]
+        label = include_icon_names[randnum]
     else:
-        randnum = np.random.randint(0, len(exclude_files))
-        index_req = iconImgNameList.index(exclude_files[randnum])
+        randnum = np.random.randint(0, len(not_include_icons))
+        icon_img = not_include_icons[randnum]
+        label = not_include_icon_names[randnum]
 
-    icon_img = iconImgList[index_req]
-    label = iconImgNameList[index_req]
-    scale = np.random.uniform(1, 1.5)
-    icon_img = scaleImage(icon_img, scale)
+    icon_height, icon_width, _ = np.shape(icon_img)
+    if len(scale_range)==2:
+        if len(restrict_range) == 2:
+            if restrict_range[0] < icon_width or restrict_range[1] < icon_height:
+                scale = np.random.uniform(scale_range[0], scale_range[1])
+                icon_img = scaleImage(icon_img, scale)
+
 
     finalImg, finalBoundRect = place_distorted_sample(
         bkgImg, icon_img, occupancy_bits
@@ -108,42 +133,58 @@ def choose_and_place_sample(bkgImg, occupancy_bits,
     else:
         print("Unlabelled Icon "+ label +" put on image: ", filenameWithExt)
     
-def scaleImage(image, scale):
-    return cv2.resize(image, None, fx=scale, fy=scale)
 
 def augment_data():
-    for backgroundFilePath in backgroundFilePaths:
+    for backgroundFilePath in background_file_paths:
         for bkgImgPath in glob.glob(os.path.join(backgroundFilePath, "*.png")):
+            print("Reading: ", bkgImgPath)
             filenameWithExt = os.path.split(bkgImgPath)[1]
             filename = os.path.splitext(filenameWithExt)[0]
             bkgImg = cv2.imread(bkgImgPath)
+
+            # crop required, [rows, columns]
+            # cropping isnt mandatory, related to my data, so an add-on.
+            crop_req = True
+            if crop_req:
+                bkgImg = bkgImg[200:bkgImg.shape[0], 0:bkgImg.shape[1]]
+
             bgHeight, bgWidth, _ = np.shape(bkgImg)
+            
+            variants_bkg = [bkgImg]
+            # rotating the data if required
+            for angle in rotate_arr:
+                variants_bkg.append(rotate_image(bkgImg, angle))
+            # flipping the data if required
+            for code in flip_arr:
+                variants_bkg.append(cv2.flip(bkgImg, code))
 
-            # TODO flipping background for more synthetic data
-            #variants_bkg = [bkgImg, cv2.flip(bkgImg, 0), cv2.flip(bkgImg ,1), cv2(bkgImg, -1)]
-            # for avoiding the overlapp of icons
-            occupancy_bits = np.zeros((bgHeight, bgWidth), dtype=np.int8)
-            count = 0
-            outputName = filename
+            variant_index = 1
+            for bkgImg in variants_bkg:
+                # for avoiding the overlapp of icons
+                occupancy_bits = np.zeros((bgHeight, bgWidth), dtype=np.int8)
+                count = 0
+                outputName = filename
+                label_required_icon_count = icon_per_sample*fraction_of_include
 
-            with open(os.path.join(outputfolder+"labels/", str(outputName + ".txt")), "w+") as f:
-                # for True icons, which require labels
-                while count < label_required_icon_count:
+                with open(os.path.join(outputfolder+"labels/", str(outputName + "_" + str(variant_index) + ".txt")), "w+") as f:
+                    # for True icons, which require labels
+                    while count < label_required_icon_count:
+                        try:
+                            choose_and_place_sample(bkgImg, occupancy_bits, filenameWithExt, f, True)
+                            count += 1
+                        except AssertionError as e:
+                            print(e)
+                        
+                # for False icons, remaining count, which dont require labels
+                while count < icon_per_sample:
                     try:
-                        choose_and_place_sample(bkgImg, occupancy_bits, filenameWithExt, f, True)
+                        choose_and_place_sample(bkgImg, occupancy_bits, filenameWithExt, f, False)
                         count += 1
                     except AssertionError as e:
                         print(e)
-                    
-            # for False icons, which dont require labels
-            while count < icon_per_sample:
-                try:
-                    choose_and_place_sample(bkgImg, occupancy_bits, filenameWithExt, f, False)
-                    count += 1
-                except AssertionError as e:
-                    print(e)
 
-            cv2.imwrite(os.path.join(outputfolder+"images/", str(outputName + ".png")), bkgImg)
+                cv2.imwrite(os.path.join(outputfolder+"images/", str(outputName + "_" + str(variant_index) +".png")), bkgImg)
+                variant_index += 1
             
 if __name__ == "__main__":
     augment_data()
